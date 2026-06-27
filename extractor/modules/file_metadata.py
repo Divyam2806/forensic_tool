@@ -1,4 +1,5 @@
 from pathlib import Path
+from modules.content_reader import read_file_content
 
 # ─────────────────────────────────────────────
 # Helper: safely get a value from a dict-like
@@ -429,6 +430,11 @@ def extract_format_metadata(path: str) -> dict:
     result          = handler(str(path))
     result["path"]  = str(path)
     result["name"]  = path.name
+
+    # Extract full text content using content_reader helper
+    content         = read_file_content(str(path))
+    if content:
+        result["content"] = content
 
     return result
 

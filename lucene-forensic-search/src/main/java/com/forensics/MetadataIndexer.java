@@ -223,6 +223,12 @@ public class MetadataIndexer {
                     doc.add(new TextField("keywords_detected", keywordText, Field.Store.YES));
                 }
 
+                // Full text content
+                String content = json.optString("content", "");
+                if (!content.isBlank()) {
+                    doc.add(new TextField("content", content, Field.Store.YES));
+                }
+
                 writer.addDocument(doc);
                 System.out.println("Metadata Indexed: " + name);
             }
