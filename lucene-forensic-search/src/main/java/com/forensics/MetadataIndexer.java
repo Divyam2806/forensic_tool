@@ -266,6 +266,10 @@ public class MetadataIndexer {
                 String content = json.optString("content", "");
                 if (!content.isBlank()) {
                     doc.add(new TextField("content", content, Field.Store.YES));
+                }
+
+                // Refresh the set of already indexed fields
+                indexedFields = collectFieldNames(doc);
 
                 // Dynamically index any remaining root-level JSON keys that were
                 // not handled explicitly above. This keeps extractor output and
