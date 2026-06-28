@@ -17,6 +17,9 @@ import java.io.File;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.HashSet;
+import java.util.Iterator;
+import java.util.Set;
 import java.util.Locale;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -87,6 +90,32 @@ public class MetadataIndexer {
         }
     }
 
+    private static void addGenericValue(Document doc, String field, Object value) {
+        if (value == null || value == JSONObject.NULL) {
+            return;
+        }
+
+        if (value instanceof JSONArray array) {
+            for (int i = 0; i < array.length(); i++) {
+                addGenericValue(doc, field, array.opt(i));
+            }
+            return;
+        }
+
+        if (value instanceof JSONObject object) {
+            String serialized = object.toString().trim();
+            if (!serialized.isEmpty()) {
+                doc.add(new StringField(field, serialized.toLowerCase(Locale.ROOT), Field.Store.YES));
+            }
+            return;
+        }
+
+        String normalized = normalize(String.valueOf(value));
+        if (!normalized.isEmpty()) {
+            doc.add(new StringField(field, normalized, Field.Store.YES));
+        }
+    }
+
     private static String joinKeywords(JSONArray arr) {
         if (arr == null || arr.length() == 0) return "";
         StringBuilder sb = new StringBuilder();
@@ -98,6 +127,14 @@ public class MetadataIndexer {
             }
         }
         return sb.toString();
+    }
+
+    private static Set<String> collectFieldNames(Document doc) {
+        Set<String> fields = new HashSet<>();
+        for (var field : doc.getFields()) {
+            fields.add(field.name());
+        }
+        return fields;
     }
 
     public static void main(String[] args) throws Exception {
@@ -131,6 +168,7 @@ public class MetadataIndexer {
 
                 Document doc = new Document();
                 doc.add(new StringField("doc_type", "metadata", Field.Store.YES));
+                Set<String> indexedFields = collectFieldNames(doc);
 
                 // Core file identity
                 String name = json.optString("name", file.getName());
@@ -223,10 +261,27 @@ public class MetadataIndexer {
                     doc.add(new TextField("keywords_detected", keywordText, Field.Store.YES));
                 }
 
+
                 // Full text content
                 String content = json.optString("content", "");
                 if (!content.isBlank()) {
                     doc.add(new TextField("content", content, Field.Store.YES));
+
+                // Dynamically index any remaining root-level JSON keys that were
+                // not handled explicitly above. This keeps extractor output and
+                // Lucene search in sync even when new metadata fields appear.
+                for (Iterator<String> it = json.keys(); it.hasNext(); ) {
+                    String key = it.next();
+                    if (indexedFields.contains(key)) {
+                        continue;
+                    }
+
+                    Object value = json.opt(key);
+                    int before = doc.getFields().size();
+                    addGenericValue(doc, key, value);
+                    if (doc.getFields().size() > before) {
+                        indexedFields.add(key);
+                    }
                 }
 
                 writer.addDocument(doc);
