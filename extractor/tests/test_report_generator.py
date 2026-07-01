@@ -6,6 +6,7 @@ sys.path.insert(0, '..')
 from main import combine_metadata
 from modules.browser_artifacts import extract_network_artifacts
 from modules.report_generator import generate_pdf_report
+from modules.hashing import hash_directory_manifest
 
 # ── Config ──────────────────────────────────────────────────────────────
 SCAN_PATH    = r"C:\Users\Asus\Documents"
@@ -43,11 +44,17 @@ except Exception as e:
     browser_data = None
 
 # ── Generate report ──────────────────────────────────────────────────────
+import datetime
+manifest = hash_directory_manifest(SCAN_PATH)
+
 print(f"\nGenerating PDF report...")
 report_path = generate_pdf_report(
     combined_data=combined,
     output_path=OUTPUT_PATH,
     browser_data=browser_data,
+    manifest_data=manifest,
+    case_id = f"DF-{datetime.datetime.now().strftime('%Y%m%d-%H%M%S')}",
+    investigator="Divyam",
     top_n=TOP_N,
     scan_duration=duration,
 )

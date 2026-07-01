@@ -71,6 +71,46 @@ def _build_summary(story, styles, combined_data: dict, browser_data: dict = None
     story.append(table)
     story.append(Spacer(1, 20))
 
+def _build_evidence_collection(story, styles, manifest_data: dict, case_id: str = None, investigator: str = None):
+    """
+    Documents the evidence source, acquisition method, and integrity hash.
+    """
+    story.append(Paragraph("Evidence Collection", styles['Heading1']))
+    story.append(Spacer(1, 8))
+
+    if case_id or investigator:
+        case_lines = []
+        if case_id:
+            case_lines.append(f"<b>Case ID:</b> {case_id}")
+        if investigator:
+            case_lines.append(f"<b>Investigator:</b> {investigator}")
+        for line in case_lines:
+            story.append(Paragraph(line, styles['Normal']))
+        story.append(Spacer(1, 10))
+
+    rows = [["Field", "Value"], ["Evidence Source", manifest_data.get("directory", "unavailable")],
+            ["Acquisition Method", "Direct logical file analysis (no imaging performed)"],
+            ["Files in Manifest", str(manifest_data.get("files_included", 0))],
+            ["Manifest Hash (SHA-256)", manifest_data.get("manifest_hash", "unavailable")],
+            ["Manifest Errors", str(manifest_data.get("total_errors", 0))]]
+
+    table = Table(rows, colWidths=[160, 310])
+    table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#2c3e50")),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, -1), 8),
+        ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+        ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor("#f4f4f4")]),
+    ]))
+    story.append(table)
+    story.append(Spacer(1, 10))
+
+    note = manifest_data.get("note", "")
+    if note:
+        story.append(Paragraph(f"<i>{note}</i>", styles['Normal']))
+    story.append(Spacer(1, 20))
+
 
 def _build_file_details(story, styles, combined_data: dict, top_n: int = 10):
     story.append(Paragraph(f"File Metadata — Top {top_n} Files", styles['Heading1']))
@@ -195,19 +235,14 @@ def generate_pdf_report(
     combined_data: dict,
     output_path: str,
     browser_data: dict = None,
+    manifest_data: dict = None,
+    case_id: str = None,
+    investigator: str = None,
     top_n: int = 10,
     scan_duration: float = None,
 ) -> str:
     """
     Generate a PDF forensic report.
-
-    Args:
-        combined_data: Output from main.combine_metadata()
-        output_path: Where to save the PDF
-        browser_data: Output from browser_artifacts.extract_network_artifacts() (optional)
-        top_n: Number of files to show in detail (rest summarized)
-        scan_duration: Time taken to scan, in seconds (optional)
-
     Returns:
         Path to generated PDF
     """
@@ -221,6 +256,9 @@ def generate_pdf_report(
     scanned_path = combined_data.get("scanned_directory", "unknown")
 
     _build_header(story, styles, scanned_path, scan_duration)
+    if manifest_data:
+        _build_evidence_collection(story, styles, manifest_data, case_id, investigator)
+
     _build_summary(story, styles, combined_data, browser_data)
     _build_file_details(story, styles, combined_data, top_n)
     _build_browser_section(story, styles, browser_data, top_n)
