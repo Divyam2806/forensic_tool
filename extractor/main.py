@@ -1,8 +1,8 @@
-
 import datetime
 from pathlib import Path
 from modules.fs_metadata import scan_directory
 from modules.file_metadata import extract_from_directory
+import json
 
 
 def combine_metadata(path: str, recursive: bool = True, max_files=1000) -> list:
