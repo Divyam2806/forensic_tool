@@ -193,6 +193,7 @@ class MainWindow(QMainWindow):
             browser_data=self.browser_results,
             top_n=10,
             scan_duration=self.scan_duration,
+            manifest= self.scan_worker.manifest
         )
         self.report_worker.finished.connect(self._on_report_finished)
         self.report_worker.error.connect(self._on_report_error)
