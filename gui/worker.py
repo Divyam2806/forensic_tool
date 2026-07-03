@@ -1,7 +1,5 @@
 from PySide6.QtCore import QThread, Signal
 from pathlib import Path
-import json
-
 
 SOLR_PATH = Path(__file__).parent.parent/ 'metadata-json'
 
@@ -19,6 +17,7 @@ class ScanWorker(QThread):
         super().__init__()
         self.scan_path = scan_path
         self.max_files = max_files
+        self.manifest = None
 
     def run(self):
         """
@@ -32,15 +31,18 @@ class ScanWorker(QThread):
             # Import here, not at module level — avoids circular import
             # issues since combine_metadata lives in extractor/main.py
             from main import combine_metadata, export_for_indexing
+            from modules.hashing import hash_directory_manifest
 
             result = combine_metadata(self.scan_path, max_files=self.max_files)
-
-            # need to fix exporting issue
-            export_for_indexing(result, output_folder=SOLR_PATH)
 
             if "error" in result:
                 self.error.emit(result["error"])
                 return
+
+            self.manifest = hash_directory_manifest(self.scan_path)
+            export_for_indexing(result, output_folder=SOLR_PATH)
+
+
 
             self.progress.emit("Scan complete.")
             self.finished.emit(result)
@@ -93,25 +95,31 @@ class ReportWorker(QThread):
 
     def __init__(self, combined_data: dict, output_path: str,
                  browser_data: dict = None, top_n: int = 10,
-                 scan_duration: float = None):
+                 scan_duration: float = None, manifest: dict = None):
         super().__init__()
         self.combined_data = combined_data
         self.output_path   = output_path
         self.browser_data  = browser_data
         self.top_n         = top_n
         self.scan_duration = scan_duration
+        self.manifest = manifest
 
     def run(self):
         try:
             from modules.report_generator import generate_pdf_report
+            import datetime
 
             path = generate_pdf_report(
                 combined_data=self.combined_data,
                 output_path=self.output_path,
                 browser_data=self.browser_data,
                 top_n=self.top_n,
+                manifest_data = self.manifest,
+                case_id = f"DF-{datetime.datetime.now().strftime('%Y%m%d-%H%M%S')}",
+                investigator = "Divyam",
                 scan_duration=self.scan_duration,
             )
+
             self.finished.emit(path)
 
         except Exception as e:
