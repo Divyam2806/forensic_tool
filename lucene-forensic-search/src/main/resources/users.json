@@ -1,0 +1,6 @@
+[
+  {"username":"admin","password":"admin123","role":"ADMIN"},
+  {"username":"investigator","password":"invest123","role":"INVESTIGATOR"},
+  {"username":"analyst","password":"analyst123","role":"ANALYST"},
+  {"username":"auditor","password":"audit123","role":"AUDITOR"}
+]
