@@ -1,4 +1,20 @@
 .idea/
 index/
 metadata-json/
-evidence/
+data-recovery/recovered
+data-recovery/evidence-images
+data-recovery/__pycache__
+data-recovery/recovery_log.jsonl
+gui/__pycache__
+cases/
+*.img
+*.pdf
+
+# Local tooling / IDE noise
+.vscode/
+*.log
+
+# Python cache / virtualenvs
+__pycache__/
+.venv/
+*.pyc
