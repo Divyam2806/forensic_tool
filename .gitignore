@@ -1,6 +1,7 @@
 .idea/
 index/
 metadata-json/
+evidence/
 data-recovery/recovered
 data-recovery/evidence-images
 data-recovery/__pycache__
