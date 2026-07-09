@@ -1,281 +1,247 @@
-# Forensic Metadata Extraction and Search System
+# Forensic Evidence Preservation & Cyber Forensics Toolkit
 
-## Overview
+This project is a GUI-based forensic toolkit built around:
 
-This project combines a Python-based forensic metadata extraction framework with a Java-based Apache Lucene search engine. The system extracts metadata and forensic artifacts from files, stores the results as JSON records, indexes the data using Lucene, and provides fast searching across both file content and extracted metadata.
+- a Python extractor for metadata and PDF/text content
+- a Java Swing dashboard for case management and workflow control
+- Apache Lucene for keyword and metadata search
 
-## Architecture
+The current UI supports:
 
-```text
-Evidence Files
-      │
-      ▼
-Python Extractor
-      │
-      ▼
-metadata-json/
-      │
-      ▼
-MetadataIndexer (Lucene)
-      │
-      ▼
-Lucene Index
-      │
-      ▼
-SearchFiles
-```
+- Login
+- Role-based access control
+- Create/Open Case
+- Acquire Evidence
+- Create Disk Image
+- Extract Metadata
+- Index Files
+- Search Evidence
+- Generate Report
+- Audit Logs
 
-### Components
+## What this project does
 
-#### Extractor (Python)
+The toolkit helps you:
 
-Responsible for:
+- collect evidence into a case folder
+- extract file and PDF metadata
+- search file content and metadata with Lucene
+- generate PDF forensic reports
+- log chain-of-custody activity
 
-* File metadata extraction
-* Browser artifact extraction
-* File system artifact collection
-* Keyword detection
-* JSON metadata generation
-* Report generation as PDF
-
-Output is written to:
+## Project layout
 
 ```text
-metadata-json/
-```
-
-with one JSON file generated per evidence file.
-
-#### Lucene Search Engine (Java)
-
-Responsible for:
-
-* Indexing evidence files
-* Indexing metadata JSON files
-* Creating and maintaining a Lucene index
-* Searching indexed content and metadata
-
-Supported searches include:
-
-* Keyword search
-* Boolean search
-* Metadata field search
-* Extension filtering
-* Author filtering
-* Date filtering
-* NTFS attribute searches
-
----
-
-## Project Structure
-
-```text
-forensic-toolkit/
-│
+forensic_tool/
 ├── extractor/
-│   └── Python extraction framework
+│   ├── main.py
+│   ├── modules/
+│   └── requirements.txt
 │
 ├── lucene-forensic-search/
-│   └── Java Lucene search engine
+│   ├── pom.xml
+│   ├── src/main/java/com/forensics/
+│   ├── src/main/resources/users.json
+│   └── cases/
 │
-├── evidence/
-│   └── Files to be analyzed
-│
-├── metadata-json/
-│   └── Generated metadata JSON files
-│
-├── index/
-│   └── Generated Lucene index
-│
+├── evidence/              # source evidence files (can be a symlink)
+├── metadata-json/         # generated metadata JSON files
+├── index/                 # Lucene index
 └── README.md
 ```
 
----
-
 ## Requirements
 
-### Python
+You need:
 
-* Python 3.10+
-* Required packages listed in:
+- Java 17+
+- Maven 3.8+
+- Python 3.10+
+
+The extractor also expects these Python packages, which are listed in:
 
 ```text
 extractor/requirements.txt
 ```
 
-Install dependencies:
+## Recommended setup
+
+If you use the Python extractor directly, create and use a virtual environment:
 
 ```bash
-pip install -r extractor/requirements.txt
+cd forensic_tool/extractor
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
 ```
 
-### Java
+## Running the GUI
 
-* Java 17+
-* Maven 3.8+
-
-Verify installation:
+The GUI lives in the Lucene project.
 
 ```bash
-java -version
-mvn -version
+cd forensic_tool/lucene-forensic-search
+mvn exec:java -Dexec.mainClass="com.forensics.ForensicApp"
 ```
 
----
+## Default login users
 
-## Usage
+These are the sample accounts in `src/main/resources/users.json`:
 
-### Step 1: Add Evidence Files
+- `admin / admin123`
+- `investigator / invest123`
+- `analyst / analyst123`
+- `auditor / audit123`
 
-Place files to be analyzed inside:
+## Roles
+
+### Admin
+
+- full access
+
+### Investigator
+
+- create/open case
+- acquire evidence
+- create disk image
+- extract metadata
+- index files
+- search evidence
+- generate reports
+
+### Analyst
+
+- open existing case
+- extract metadata
+- search evidence
+- generate reports
+
+### Auditor
+
+- view audit logs
+- search evidence
+
+## Typical workflow
+
+1. Launch the GUI.
+2. Log in with a role.
+3. Create or open a case.
+4. Acquire evidence into the case.
+5. Extract metadata.
+6. Index the case metadata.
+7. Search evidence.
+8. Generate a report.
+
+## Case folder structure
+
+Each case is created under:
+
+```text
+lucene-forensic-search/cases/CASE001/
+```
+
+with subfolders like:
 
 ```text
 evidence/
+metadata/
+index/
+reports/
+logs/
+images/
+```
+
+## Generated reports
+
+When you generate a report from the GUI, it is saved under:
+
+```text
+lucene-forensic-search/cases/<CASE_ID>/reports/
 ```
 
 Example:
 
 ```text
-evidence/
-├── report.pdf
-├── image.jpg
-├── log1.txt
+lucene-forensic-search/cases/CASE001/reports/CASE001_report_20260708_035043.pdf
 ```
 
----
+## Evidence acquisition
 
-### Step 2: Run Metadata Extraction
-
-Navigate to the extractor directory and run the extraction process.
-
-Example:
-
-```bash
-cd extractor
-python main.py
-```
-
-This will generate metadata JSON files in:
+The `Acquire Evidence` action copies a selected folder into the active case’s:
 
 ```text
-metadata-json/
+cases/<CASE_ID>/evidence/
 ```
 
----
+It also logs chain-of-custody activity.
 
-### Step 3: Build the Lucene Project
+## Metadata extraction and search
 
-Navigate to the Lucene project:
+The `Extract Metadata` action runs the Python extractor against the active case evidence folder and writes JSON into:
 
-```bash
-cd lucene-forensic-search
+```text
+cases/<CASE_ID>/metadata/
 ```
 
-Compile:
+The `Index Files` action then indexes that metadata into:
 
-```bash
-mvn compile
+```text
+cases/<CASE_ID>/index/
 ```
 
----
+The `Search Evidence` action opens a search dialog against the active case index.
 
-### Step 4: Index Evidence Files
+## Report generation
 
-```bash
-mvn exec:java "-Dexec.mainClass=com.forensics.IndexFiles"
+The `Generate Report` action uses the existing Python report generator to create a PDF report from the active case and stores it in the case’s `reports/` folder.
+
+## Notes on cross-platform behavior
+
+- The GUI, case management, metadata extraction, indexing, search, and report generation are designed to work across OSes as long as the required Java/Python dependencies are installed.
+- Raw disk imaging currently uses `dd`, so that part is Unix-like system friendly and not fully Windows-native yet.
+
+## Files that stay local
+
+This repo ignores runtime forensic artifacts such as:
+
+- `cases/`
+- `evidence/`
+- `metadata-json/`
+- `index/`
+- generated `.pdf` and `.img` files
+
+So you can run the toolkit locally without pushing evidence artifacts to GitHub.
+
+## Search examples
+
+From the GUI search box:
+
+```text
+ganesh
 ```
 
-This indexes:
-
-* File contents
-* File names
-* File paths
-* SHA256 hashes
-* Basic forensic metadata
-
----
-
-### Step 5: Index Metadata JSON
-
-```bash
-mvn exec:java "-Dexec.mainClass=com.forensics.MetadataIndexer"
+```text
+extension:pdf
 ```
 
-This indexes metadata generated by the Python extractor.
-
----
-
-### Step 6: Search
-
-Keyword search:
-
-```bash
-mvn exec:java "-Dexec.mainClass=com.forensics.SearchFiles" "-Dexec.args=bitcoin"
+```text
+modified:2026-06-22
 ```
 
-Boolean search:
-
-```bash
-mvn exec:java "-Dexec.mainClass=com.forensics.SearchFiles" "-Dexec.args=password OR login"
+```text
+author:ritik
 ```
 
-Extension search:
-
-```bash
-mvn exec:java "-Dexec.mainClass=com.forensics.SearchFiles" "-Dexec.args=extension:pdf"
+```text
+encrypted:false
 ```
 
-Author search:
+## Launch checklist
 
-```bash
-mvn exec:java "-Dexec.mainClass=com.forensics.SearchFiles" "-Dexec.args=author:michael"
-```
+If the GUI does not start, check:
 
-Date search:
+- you ran Maven from `lucene-forensic-search/`
+- Java 17 is installed
+- the Python virtual environment exists in `extractor/.venv`
+- `pypdf`, `reportlab`, and the other extractor dependencies are installed
 
-```bash
-mvn exec:java "-Dexec.mainClass=com.forensics.SearchFiles" "-Dexec.args=modified_date:2025-08-01"
-```
-
-Metadata document search:
-
-```bash
-mvn exec:java "-Dexec.mainClass=com.forensics.SearchFiles" "-Dexec.args=doc_type:metadata"
-```
-
----
-
-## Indexed Metadata Fields
-
-Examples of supported metadata fields:
-
-* author
-* title
-* subject
-* format
-* platform
-* encrypted
-* page_count
-* modified_date
-* created_date
-* keywords_detected
-* risk_level
-* ntfs_hidden
-* ntfs_readonly
-* ntfs_encrypted
-
----
-
-## Notes
-
-* Metadata JSON files are generated automatically by the Python extractor.
-* Lucene indexes are generated locally and should not be committed to version control.
-* Generated metadata files may be regenerated at any time from the source evidence.
-* Searches are case-insensitive for normalized metadata fields.
-
----
-
-## Contributors
-
-* Divyam – Python Metadata Extraction Framework
-* Ritik – Apache Lucene Indexing and Search Engine

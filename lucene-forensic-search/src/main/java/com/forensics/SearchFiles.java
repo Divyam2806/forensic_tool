@@ -10,7 +10,10 @@ import org.apache.lucene.search.*;
 import org.apache.lucene.store.Directory;
 import org.apache.lucene.store.FSDirectory;
 
+import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Locale;
 
 public class SearchFiles {
@@ -51,7 +54,7 @@ public class SearchFiles {
         return colon > 0;
     }
 
-    private static Query buildQuery(String rawQuery, StandardAnalyzer analyzer) throws Exception {
+    public static Query buildQuery(String rawQuery, StandardAnalyzer analyzer) throws Exception {
         String q = rawQuery.trim();
 
         if (q.isEmpty()) {
@@ -80,6 +83,23 @@ public class SearchFiles {
         return parser.parse(q);
     }
 
+    public static List<Document> search(Path indexPath, String rawQuery, int limit) throws Exception {
+        Directory dir = FSDirectory.open(indexPath);
+
+        try (DirectoryReader reader = DirectoryReader.open(dir)) {
+            IndexSearcher searcher = new IndexSearcher(reader);
+            StandardAnalyzer analyzer = new StandardAnalyzer();
+            Query query = buildQuery(rawQuery, analyzer);
+            TopDocs results = searcher.search(query, limit);
+
+            List<Document> docs = new ArrayList<>();
+            for (ScoreDoc sd : results.scoreDocs) {
+                docs.add(searcher.doc(sd.doc));
+            }
+            return docs;
+        }
+    }
+
     private static String safe(String value) {
         return value == null ? "null" : value;
     }
@@ -100,14 +120,24 @@ public class SearchFiles {
     }
 
     public static void main(String[] args) throws Exception {
-        Directory dir = FSDirectory.open(Paths.get("../index"));
+        Path indexPath = Paths.get("../index");
+        StringBuilder queryBuilder = new StringBuilder();
+        for (String arg : args) {
+            if (arg.startsWith("--index=")) {
+                indexPath = Paths.get(arg.substring("--index=".length()));
+            } else {
+                if (!queryBuilder.isEmpty()) queryBuilder.append(' ');
+                queryBuilder.append(arg);
+            }
+        }
+        Directory dir = FSDirectory.open(indexPath);
 
         try (DirectoryReader reader = DirectoryReader.open(dir)) {
             IndexSearcher searcher = new IndexSearcher(reader);
             StandardAnalyzer analyzer = new StandardAnalyzer();
 
-            String rawQuery = args.length > 0
-                    ? String.join(" ", args).trim()
+            String rawQuery = queryBuilder.length() > 0
+                    ? queryBuilder.toString().trim()
                     : "bitcoin";
 
             Query query = buildQuery(rawQuery, analyzer);

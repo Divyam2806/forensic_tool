@@ -1,0 +1,13 @@
+package com.forensics.auth;
+
+public enum Permission {
+    CREATE_CASE,
+    OPEN_CASE,
+    ACQUIRE_EVIDENCE,
+    CREATE_DISK_IMAGE,
+    EXTRACT_METADATA,
+    INDEX_FILES,
+    SEARCH_EVIDENCE,
+    GENERATE_REPORT,
+    VIEW_AUDIT_LOGS
+}

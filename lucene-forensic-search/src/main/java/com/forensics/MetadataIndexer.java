@@ -138,14 +138,15 @@ public class MetadataIndexer {
     }
 
     public static void main(String[] args) throws Exception {
-        Path indexPath = Paths.get("../index");
+        Path metadataPath = Paths.get(args.length > 0 ? args[0] : "../metadata-json");
+        Path indexPath = Paths.get(args.length > 1 ? args[1] : "../index");
         Directory dir = FSDirectory.open(indexPath);
         StandardAnalyzer analyzer = new StandardAnalyzer();
 
         IndexWriterConfig config = new IndexWriterConfig(analyzer);
         config.setOpenMode(IndexWriterConfig.OpenMode.CREATE_OR_APPEND);
 
-        File folder = new File("../metadata-json");
+        File folder = metadataPath.toFile();
         if (!folder.exists() || !folder.isDirectory()) {
             System.err.println("Metadata folder not found: " + folder.getAbsolutePath());
             return;
