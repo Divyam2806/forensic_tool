@@ -18,6 +18,7 @@ The current UI supports:
 - Search Evidence
 - Generate Report
 - Audit Logs
+- AI Analysis
 
 ## What this project does
 
@@ -29,7 +30,55 @@ The toolkit helps you:
 - generate PDF forensic reports
 - log chain-of-custody activity
 
-## Project layout
+## How to Run the Java App
+
+### Prerequisites
+
+1. **Java 17+** — confirm with `java -version`
+2. **Maven** — confirm with `mvn -version`
+3. **Python 3.13** with virtualenv set up inside `extractor/`
+4. **Python dependencies** installed — from `extractor/`:
+   ```bash
+   python -m pip install -r requirements.txt
+   ```
+5. **MediaInfo** installed — download from [mediaarea.net/en/MediaInfo](https://mediaarea.net/en/MediaInfo)
+6. **Qwen LLM model** — download `Qwen2.5-3B-Instruct.Q4_K_M.gguf` from [https://huggingface.co/divyam2806/qwen2.5-3b-forensic-finetuned] and place at `model/Qwen2.5-3B-Instruct.Q4_K_M.gguf`
+7. **ONNX model path** — open `lucene-forensic-search/src/main/resources/config.properties` and update the ONNX model path present in root to match your local setup
+
+---
+
+### Steps to Run
+
+**Step 1 — Start the Python FastAPI service**
+
+From the `extractor/` directory with your virtualenv active:
+```bash
+uvicorn api:app --host 127.0.0.1 --port 8000
+```
+Keep this terminal open — the Java app communicates with this service throughout its lifecycle. The app will show an error dialog and refuse to proceed if this service is not running.
+
+**Step 2 — Build and run the Java app**
+
+Open a new terminal, navigate to `lucene-forensic-search/` and run:
+```bash
+mvn compile exec:java -Dexec.mainClass=com.forensics.ForensicApp
+```
+
+
+**Step 3 — Login**
+
+A login dialog will appear on launch. Use your registered credentials to proceed to the dashboard.
+Admin account:
+user: admin
+pass: admin123
+
+---
+
+### Notes
+
+- Cases are stored under `lucene-forensic-search/cases/` by default
+- Metadata JSON exports if ran from CLI or Python GUI go to `forensic_tool/metadata-json/` for Lucene indexing
+## Project layout (not upto date)
 
 ```text
 forensic_tool/
@@ -244,4 +293,6 @@ If the GUI does not start, check:
 - Java 17 is installed
 - the Python virtual environment exists in `extractor/.venv`
 - `pypdf`, `reportlab`, and the other extractor dependencies are installed
+
+
 
