@@ -15,8 +15,30 @@ import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.Properties;
+import java.io.InputStream;
+
+
 
 public class SearchFiles {
+
+    private static EmbeddingService embeddingService;
+
+    static {
+        try {
+            Properties config = new Properties();
+            try (InputStream input = SearchFiles.class.getClassLoader().getResourceAsStream("config.properties")) {
+                config.load(input);
+            }
+            String modelPath = config.getProperty("minilm.model.path");
+            String tokenizerPath = config.getProperty("minilm.tokenizer.path");
+            embeddingService = new EmbeddingService(
+                     modelPath, tokenizerPath
+            );
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to initialize embedding model.", e);
+        }
+    }
 
     private static final String[] DEFAULT_SEARCH_FIELDS = {
             "content",
@@ -100,6 +122,39 @@ public class SearchFiles {
         }
     }
 
+    public static List<Document> semanticSearch(
+        Path indexPath,
+        String queryText,
+        int limit) throws Exception
+    {
+
+        Directory dir = FSDirectory.open(indexPath);
+
+        try (DirectoryReader reader = DirectoryReader.open(dir)) {
+            IndexSearcher searcher = new IndexSearcher(reader);
+            float[] queryVector = embeddingService.embed(queryText);
+
+            KnnFloatVectorQuery knnQuery =
+                    new KnnFloatVectorQuery(
+                            "artifact_embedding",
+                            queryVector,
+                            limit
+                    );
+
+            TopDocs results = searcher.search(knnQuery, limit);
+
+            List<Document> docs = new ArrayList<>();
+
+            for (ScoreDoc sd : results.scoreDocs) {
+                docs.add(searcher.doc(sd.doc));
+            }
+
+
+
+            return docs;
+        }
+    }
+
     private static String safe(String value) {
         return value == null ? "null" : value;
     }
@@ -120,39 +175,50 @@ public class SearchFiles {
     }
 
     public static void main(String[] args) throws Exception {
+
         Path indexPath = Paths.get("../index");
+        boolean semantic = false;
         StringBuilder queryBuilder = new StringBuilder();
+
         for (String arg : args) {
+            if (arg.equals("--semantic")) {
+                semantic = true;
+                continue;
+            }
             if (arg.startsWith("--index=")) {
                 indexPath = Paths.get(arg.substring("--index=".length()));
-            } else {
-                if (!queryBuilder.isEmpty()) queryBuilder.append(' ');
-                queryBuilder.append(arg);
+                continue;
             }
+            if (!queryBuilder.isEmpty()) {
+                queryBuilder.append(' ');
+            }
+            queryBuilder.append(arg);
         }
-        Directory dir = FSDirectory.open(indexPath);
 
-        try (DirectoryReader reader = DirectoryReader.open(dir)) {
-            IndexSearcher searcher = new IndexSearcher(reader);
-            StandardAnalyzer analyzer = new StandardAnalyzer();
+        if (queryBuilder.isEmpty()) {
+            System.out.println("Usage:");
+            System.out.println("  SearchFiles <query>");
+            System.out.println("  SearchFiles --semantic <query>");
+            return;
+        }
 
-            String rawQuery = queryBuilder.length() > 0
-                    ? queryBuilder.toString().trim()
-                    : "bitcoin";
+        String rawQuery = queryBuilder.toString().trim();
 
-            Query query = buildQuery(rawQuery, analyzer);
+        List<Document> results;
 
-            TopDocs results = searcher.search(query, 20);
+        if (semantic) {
+            results = semanticSearch(indexPath, rawQuery, 5);
+        } else {
+            results = search(indexPath, rawQuery, 20);
+        }
 
-            if (results.totalHits.value == 0) {
-                System.out.println("No matches found.");
-                return;
-            }
+        if (results.isEmpty()) {
+            System.out.println("No matches found.");
+            return;
+        }
 
-            for (ScoreDoc sd : results.scoreDocs) {
-                Document doc = searcher.doc(sd.doc);
-                printDoc(doc);
-            }
+        for (Document doc : results) {
+            printDoc(doc);
         }
     }
 }
