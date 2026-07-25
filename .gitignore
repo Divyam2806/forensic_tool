@@ -19,3 +19,5 @@ cases/
 __pycache__/
 .venv/
 *.pyc
+
+model/Qwen2.5-3B-Instruct.Q4_K_M.gguf

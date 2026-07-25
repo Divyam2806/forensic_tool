@@ -1,5 +1,13 @@
 package com.forensics.ui;
 
+import com.forensics.api.ForensicApiClient;
+import com.forensics.casework.CaseInfo;
+import com.forensics.casework.CaseMetadataExtractionService;
+import org.json.JSONObject;
+import javax.swing.SwingWorker;
+import java.nio.file.Path;
+import java.io.IOException;
+
 import com.forensics.auth.Permission;
 import com.forensics.auth.RolePermissions;
 import com.forensics.auth.UserAccount;
@@ -30,7 +38,8 @@ public class ForensicDashboard extends JFrame {
         INDEX_FILES,
         SEARCH_EVIDENCE,
         GENERATE_REPORT,
-        VIEW_AUDIT_LOGS
+        VIEW_AUDIT_LOGS,
+        ANALYZE_WITH_AI
     }
 
     private final UserAccount user;
@@ -38,6 +47,7 @@ public class ForensicDashboard extends JFrame {
     private final Map<ActionKey, JButton> buttons = new LinkedHashMap<>();
     private final JLabel activeCaseLabel = new JLabel("Active case: none");
     private final JLabel summaryLabel = new JLabel("Ready");
+    private final CaseMetadataExtractionService extractionService = new CaseMetadataExtractionService();
 
     public ForensicDashboard(UserAccount user) {
         super("Forensic Toolkit - " + user.username() + " (" + user.role() + ")");
@@ -83,6 +93,7 @@ public class ForensicDashboard extends JFrame {
         addCard(cards, ActionKey.SEARCH_EVIDENCE, Permission.SEARCH_EVIDENCE, "Search Evidence", "Search content and metadata.");
         addCard(cards, ActionKey.GENERATE_REPORT, Permission.GENERATE_REPORT, "Generate Report", "Create forensic PDF reports.");
         addCard(cards, ActionKey.VIEW_AUDIT_LOGS, Permission.VIEW_AUDIT_LOGS, "Audit Logs", "Inspect chain-of-custody trails.");
+        addCard(cards, ActionKey.ANALYZE_WITH_AI, Permission.ANALYZE_WITH_AI, "AI Analysis", "Analyze metadata using local LLM model.");
 
         JPanel statusBar = new JPanel(new BorderLayout());
         statusBar.setBackground(CARD);
@@ -142,7 +153,10 @@ public class ForensicDashboard extends JFrame {
             button.addActionListener(e -> openSearchDialog());
         } else if (key == ActionKey.GENERATE_REPORT) {
             button.addActionListener(e -> openReportDialog());
-        } else {
+        } else if (key == ActionKey.ANALYZE_WITH_AI) {
+            button.addActionListener(e -> openAiAnalysisDialog());
+        }
+        else {
             button.addActionListener(e -> JOptionPane.showMessageDialog(this,
                     "Module placeholder: " + title,
                     "Coming soon",
@@ -207,18 +221,63 @@ public class ForensicDashboard extends JFrame {
     private void openMetadataExtraction() {
         var active = caseManager.getActiveCase();
         if (active.isEmpty()) {
-            JOptionPane.showMessageDialog(this, "Please create or open a case first.", "No active case", JOptionPane.WARNING_MESSAGE);
+            JOptionPane.showMessageDialog(this,
+                    "Please create or open a case first.",
+                    "No active case",
+                    JOptionPane.WARNING_MESSAGE);
             return;
         }
-        try {
-            new CaseMetadataExtractionService().extractMetadata(active.get());
+
+        CaseInfo caseInfo = active.get();
+
+        // Check Python service is running before starting worker
+        if (!extractionService.isServiceRunning()) {
             JOptionPane.showMessageDialog(this,
-                    "Metadata extracted into " + CaseServices.metadataDir(active.get()),
-                    "Extraction complete",
-                    JOptionPane.INFORMATION_MESSAGE);
-        } catch (Exception ex) {
-            JOptionPane.showMessageDialog(this, ex.getMessage(), "Metadata extraction failed", JOptionPane.ERROR_MESSAGE);
+                    "Python forensic service is not running.\n" +
+                    "Start it with: uvicorn api:app --host 127.0.0.1 --port 8000\n" +
+                    "from the extractor/ directory.",
+                    "Service Unavailable",
+                    JOptionPane.ERROR_MESSAGE);
+            return;
         }
+
+        // Disable button to prevent double-click during scan
+        buttons.get(ActionKey.EXTRACT_METADATA).setEnabled(false);
+
+        SwingWorker<JSONObject, Void> worker = new SwingWorker<>() {
+
+            @Override
+            protected JSONObject doInBackground() throws Exception {
+                // Runs on background thread — safe to do long operations here
+                return extractionService.extractMetadata(caseInfo, 1000);
+            }
+
+            @Override
+            protected void done() {
+                // Runs back on EDT when doInBackground() finished
+                buttons.get(ActionKey.EXTRACT_METADATA).setEnabled(true);
+                try {
+                    JSONObject result = get();
+                    JOptionPane.showMessageDialog(
+                            ForensicDashboard.this,
+                            "Metadata extracted successfully.\n" +
+                            "Files processed: " + result.getInt("total_files") + "\n" +
+                            "Manifest hash: " + result.getString("manifest_hash"),
+                            "Extraction Complete",
+                            JOptionPane.INFORMATION_MESSAGE
+                    );
+                } catch (Exception ex) {
+                    JOptionPane.showMessageDialog(
+                            ForensicDashboard.this,
+                            "Extraction failed: " + ex.getMessage(),
+                            "Metadata Extraction Failed",
+                            JOptionPane.ERROR_MESSAGE
+                    );
+                }
+            }
+        };
+
+        worker.execute();
     }
 
     private void indexCaseMetadata() {
@@ -253,11 +312,25 @@ public class ForensicDashboard extends JFrame {
     private void openReportDialog() {
         var active = caseManager.getActiveCase();
         if (active.isEmpty()) {
-            JOptionPane.showMessageDialog(this, "Please create or open a case first.", "No active case", JOptionPane.WARNING_MESSAGE);
+            JOptionPane.showMessageDialog(this,
+                    "Please create or open a case first.",
+                    "No active case",
+                    JOptionPane.WARNING_MESSAGE);
             return;
         }
+
+        String sessionId = extractionService.getCurrentSessionId();
+        if (sessionId == null) {
+            JOptionPane.showMessageDialog(this,
+                    "No active extraction session.\n" +
+                    "Please run Extract Metadata first.",
+                    "No Session",
+                    JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+
         String investigator = user.username();
-        ReportDialog dialog = new ReportDialog(this, active.get(), investigator);
+        ReportDialog dialog = new ReportDialog(this, active.get(), investigator, sessionId);
         boolean done = dialog.showDialog();
         if (done) {
             JOptionPane.showMessageDialog(this,
@@ -277,6 +350,77 @@ public class ForensicDashboard extends JFrame {
         summaryLabel.setText(activeCaseLabel.getText());
     }
 
+    private void openAiAnalysisDialog() {
+        var active = caseManager.getActiveCase();
+        if (active.isEmpty()) {
+            JOptionPane.showMessageDialog(this,
+                    "Please create or open a case first.",
+                    "No active case",
+                    JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+
+        // Open file picker pointing at case metadata folder
+        Path metadataDir;
+        try {
+            metadataDir = CaseServices.metadataDir(active.get());
+        } catch (IOException ex) {
+            JOptionPane.showMessageDialog(this,
+                    "Could not resolve metadata directory: " + ex.getMessage(),
+                    "Error",
+                    JOptionPane.ERROR_MESSAGE);
+            return;
+        }
+
+        JFileChooser fileChooser = new JFileChooser(metadataDir.toFile());
+        fileChooser.setDialogTitle("Select Metadata File for AI Analysis");
+        fileChooser.setFileFilter(new javax.swing.filechooser.FileNameExtensionFilter(
+                "JSON files", "json"
+        ));
+
+        int result = fileChooser.showOpenDialog(this);
+        if (result != JFileChooser.APPROVE_OPTION) return;
+
+        Path selectedFile = fileChooser.getSelectedFile().toPath();
+
+        buttons.get(ActionKey.ANALYZE_WITH_AI).setEnabled(false);
+
+        SwingWorker<String, Void> worker = new SwingWorker<>() {
+
+            @Override
+            protected String doInBackground() throws Exception {
+                ForensicApiClient apiClient = new ForensicApiClient();
+                JSONObject result = apiClient.analyze(
+                        selectedFile.toAbsolutePath().toString()
+                );
+                return result.toString(2); // pretty print JSON
+            }
+
+            @Override
+            protected void done() {
+                buttons.get(ActionKey.ANALYZE_WITH_AI).setEnabled(true);
+                try {
+                    String analysisResult = get();
+                    JOptionPane.showMessageDialog(
+                            ForensicDashboard.this,
+                            analysisResult,
+                            "AI Analysis Complete",
+                            JOptionPane.INFORMATION_MESSAGE
+                    );
+                } catch (Exception ex) {
+                    JOptionPane.showMessageDialog(
+                            ForensicDashboard.this,
+                            "AI analysis failed: " + ex.getMessage(),
+                            "Error",
+                            JOptionPane.ERROR_MESSAGE
+                    );
+                }
+            }
+        };
+
+        worker.execute();
+    }
+
     private void applyPermissions() {
         for (var entry : buttons.entrySet()) {
             boolean enabled = switch (entry.getKey()) {
@@ -289,6 +433,7 @@ public class ForensicDashboard extends JFrame {
                 case SEARCH_EVIDENCE -> RolePermissions.allows(user.role(), Permission.SEARCH_EVIDENCE);
                 case GENERATE_REPORT -> RolePermissions.allows(user.role(), Permission.GENERATE_REPORT);
                 case VIEW_AUDIT_LOGS -> RolePermissions.allows(user.role(), Permission.VIEW_AUDIT_LOGS);
+                case ANALYZE_WITH_AI -> RolePermissions.allows(user.role(), Permission.ANALYZE_WITH_AI);
             };
             entry.getValue().setEnabled(enabled);
             if (!enabled) {

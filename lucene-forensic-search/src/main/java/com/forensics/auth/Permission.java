@@ -9,5 +9,6 @@ public enum Permission {
     INDEX_FILES,
     SEARCH_EVIDENCE,
     GENERATE_REPORT,
-    VIEW_AUDIT_LOGS
+    VIEW_AUDIT_LOGS,
+    ANALYZE_WITH_AI
 }

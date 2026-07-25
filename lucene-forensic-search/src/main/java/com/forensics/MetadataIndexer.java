@@ -24,6 +24,9 @@ import java.util.Locale;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import org.apache.lucene.document.KnnFloatVectorField;
+import org.apache.lucene.index.VectorSimilarityFunction;
+
 public class MetadataIndexer {
 
     private static final Pattern ISO_DATE = Pattern.compile("^(\\d{4})-(\\d{2})-(\\d{2}).*$");
@@ -140,18 +143,25 @@ public class MetadataIndexer {
     public static void main(String[] args) throws Exception {
         Path metadataPath = Paths.get(args.length > 0 ? args[0] : "../metadata-json");
         Path indexPath = Paths.get(args.length > 1 ? args[1] : "../index");
+
+        if (Files.exists(indexPath)) {
+            System.out.println("Existing index found. It will be replaced.");
+        } else {
+            System.out.println("No existing index found. Creating a new one.");
+        }
+
         Directory dir = FSDirectory.open(indexPath);
         StandardAnalyzer analyzer = new StandardAnalyzer();
 
         IndexWriterConfig config = new IndexWriterConfig(analyzer);
-        config.setOpenMode(IndexWriterConfig.OpenMode.CREATE_OR_APPEND);
+        config.setOpenMode(IndexWriterConfig.OpenMode.CREATE);
 
         File folder = metadataPath.toFile();
         if (!folder.exists() || !folder.isDirectory()) {
             System.err.println("Metadata folder not found: " + folder.getAbsolutePath());
             return;
         }
-
+        
         try (IndexWriter writer = new IndexWriter(dir, config)) {
             File[] files = folder.listFiles();
             if (files == null) {
@@ -277,6 +287,11 @@ public class MetadataIndexer {
                 // Lucene search in sync even when new metadata fields appear.
                 for (Iterator<String> it = json.keys(); it.hasNext(); ) {
                     String key = it.next();
+
+                    if (key.equals("artifact_embedding")) {
+                       continue; // handled separately below, not a generic field
+                    }
+
                     if (indexedFields.contains(key)) {
                         continue;
                     }
@@ -287,6 +302,18 @@ public class MetadataIndexer {
                     if (doc.getFields().size() > before) {
                         indexedFields.add(key);
                     }
+                }
+
+                // Handle artifact_embedding separately as a KNN vector field
+                if (json.has("artifact_embedding")) {
+                    JSONArray embeddingArray = json.getJSONArray("artifact_embedding");
+                    float[] vector = new float[embeddingArray.length()];
+                    for (int i = 0; i < embeddingArray.length(); i++) {
+                        vector[i] = (float) embeddingArray.getDouble(i);
+                    }
+                    doc.add(new KnnFloatVectorField("artifact_embedding", vector, VectorSimilarityFunction.COSINE));
+                } else {
+                    System.out.println("[warn] No artifact_embedding found for artifact: " + json.optString("name", json.optString("path", "unknown")));
                 }
 
                 writer.addDocument(doc);

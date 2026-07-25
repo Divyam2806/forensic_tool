@@ -9,6 +9,8 @@ import java.nio.file.Path;
 import java.util.List;
 
 public class CaseSearchDialog extends JDialog {
+    private final JRadioButton keywordSearchButton = new JRadioButton("Keyword Search", true);
+    private final JRadioButton semanticSearchButton = new JRadioButton("Semantic Search");
     private final JTextField queryField = new JTextField(28);
     private final JTextArea resultsArea = new JTextArea(18, 60);
     private final CaseInfo caseInfo;
@@ -16,6 +18,10 @@ public class CaseSearchDialog extends JDialog {
     public CaseSearchDialog(Frame owner, CaseInfo caseInfo) {
         super(owner, "Search Evidence", true);
         this.caseInfo = caseInfo;
+
+        ButtonGroup searchGroup = new ButtonGroup();
+        searchGroup.add(keywordSearchButton);
+        searchGroup.add(semanticSearchButton);
 
         JButton searchButton = new JButton("Search");
         JButton closeButton = new JButton("Close");
@@ -25,7 +31,17 @@ public class CaseSearchDialog extends JDialog {
 
         JPanel top = new JPanel(new BorderLayout(8, 8));
         top.add(new JLabel("Search query"), BorderLayout.WEST);
-        top.add(queryField, BorderLayout.CENTER);
+
+        JPanel modePanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 5, 0));
+        modePanel.setBorder(BorderFactory.createEmptyBorder(4, 0, 0, 0));
+        modePanel.add(keywordSearchButton);
+        modePanel.add(semanticSearchButton);
+
+        JPanel center = new JPanel(new BorderLayout(5, 5));
+        center.add(queryField, BorderLayout.CENTER);
+        center.add(modePanel, BorderLayout.SOUTH);
+
+        top.add(center, BorderLayout.CENTER);
         top.add(searchButton, BorderLayout.EAST);
 
         resultsArea.setEditable(false);
@@ -57,7 +73,14 @@ public class CaseSearchDialog extends JDialog {
                 return;
             }
             Path indexPath = caseInfo.casePath().resolve("index");
-            List<org.apache.lucene.document.Document> docs = SearchFiles.search(indexPath, q, 20);
+            List<org.apache.lucene.document.Document> docs;
+
+            if (semanticSearchButton.isSelected()) {
+                docs = SearchFiles.semanticSearch(indexPath, q, 5);
+            } else {
+                docs = SearchFiles.search(indexPath, q, 20);
+            }
+
             if (docs.isEmpty()) {
                 resultsArea.setText("No matches found.");
                 return;
