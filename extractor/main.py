@@ -1,8 +1,10 @@
 import datetime
 from pathlib import Path
+from model.embeddings import safe_process_artifact_for_embedding
 from modules.fs_metadata import scan_directory
 from modules.file_metadata import extract_from_directory
-import json
+import json #not "unused", crucial to writing json data
+
 
 
 def combine_metadata(path: str, recursive: bool = True, max_files=1000) -> list:
@@ -66,6 +68,8 @@ def export_for_indexing(combined_data: dict, output_folder: str = "../output/sol
     for record in files:
         # Use file path hash or sanitized name as unique filename
         # to avoid collisions and invalid filename characters
+        embedding_result = safe_process_artifact_for_embedding(record)
+        record["artifact_embedding"] = embedding_result["embedding"]
         safe_name = record.get("name", f"record_{count}")
         safe_name = "".join(c if c.isalnum() or c in "._-" else "_" for c in safe_name)
         timestamp = datetime.datetime.now().strftime("%Y%m%d%H%M%S%f")
@@ -84,7 +88,7 @@ if __name__ == "__main__":
     import sys
 
     SOLR_PATH = Path(__file__).parent.parent/ 'metadata-json'
-    FILE_SCAN_LIMIT = 5
+    FILE_SCAN_LIMIT = 200
     path = sys.argv[1] if len(sys.argv) > 1 else "."
     top_n = int(sys.argv[2]) if len(sys.argv) > 2 else 5
 
