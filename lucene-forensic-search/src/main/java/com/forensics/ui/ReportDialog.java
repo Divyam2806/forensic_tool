@@ -8,34 +8,59 @@ import java.awt.*;
 import java.nio.file.Path;
 
 public class ReportDialog extends JDialog {
+
     private final JTextField investigatorField = new JTextField(20);
-    private final JLabel statusLabel = new JLabel(" ");
+    private final JLabel     statusLabel       = new JLabel(" ");
+    private final JButton    generateButton    = new JButton("Generate");
     private boolean completed;
 
-    public ReportDialog(Frame owner, CaseInfo activeCase, String defaultInvestigator) {
+    public ReportDialog(Frame owner, CaseInfo activeCase,
+                        String defaultInvestigator, String sessionId) {
         super(owner, "Generate Report", true);
+
         if (defaultInvestigator != null) {
             investigatorField.setText(defaultInvestigator);
         }
 
-        JButton generateButton = new JButton("Generate");
         JButton cancelButton = new JButton("Cancel");
 
         generateButton.addActionListener(e -> {
-            try {
-                String investigator = investigatorField.getText().trim();
-                Path result = new CaseReportService().generateReport(activeCase, investigator);
-                statusLabel.setText("Report created at: " + result);
-                completed = true;
-                JOptionPane.showMessageDialog(this,
-                        "Report generated:\n" + result,
-                        "Report complete",
-                        JOptionPane.INFORMATION_MESSAGE);
-                dispose();
-            } catch (Exception ex) {
-                statusLabel.setForeground(new Color(180, 53, 53));
-                statusLabel.setText(ex.getMessage());
-            }
+            String investigator = investigatorField.getText().trim();
+            generateButton.setEnabled(false);
+            statusLabel.setForeground(Color.DARK_GRAY);
+            statusLabel.setText("Generating report...");
+
+            SwingWorker<Path, Void> worker = new SwingWorker<>() {
+
+                @Override
+                protected Path doInBackground() throws Exception {
+                    return new CaseReportService().generateReport(
+                            activeCase, investigator, sessionId
+                    );
+                }
+
+                @Override
+                protected void done() {
+                    generateButton.setEnabled(true);
+                    try {
+                        Path result = get();
+                        statusLabel.setText("Report created at: " + result);
+                        completed = true;
+                        JOptionPane.showMessageDialog(
+                                ReportDialog.this,
+                                "Report generated:\n" + result,
+                                "Report Complete",
+                                JOptionPane.INFORMATION_MESSAGE
+                        );
+                        dispose();
+                    } catch (Exception ex) {
+                        statusLabel.setForeground(new Color(180, 53, 53));
+                        statusLabel.setText(ex.getMessage());
+                    }
+                }
+            };
+
+            worker.execute();
         });
 
         cancelButton.addActionListener(e -> dispose());

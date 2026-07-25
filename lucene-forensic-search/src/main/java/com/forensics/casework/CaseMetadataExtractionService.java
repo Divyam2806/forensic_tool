@@ -1,74 +1,98 @@
 package com.forensics.casework;
 
+import com.forensics.api.ForensicApiClient;
+import org.json.JSONObject;
+
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.Paths;
-import java.util.List;
 
+/**
+ * Case-level orchestration for metadata extraction.
+ * Uses ForensicApiClient for HTTP communication with Python service.
+ * Handles case path resolution and session lifecycle.
+ *
+ * Session lifecycle:
+ *   extractMetadata()        → creates session
+ *   extractBrowserArtifacts() → optional, adds to session
+ *   generateReport()          → generates PDF from session
+ *   clearSession()            → frees session memory
+ */
 public class CaseMetadataExtractionService {
-    public void extractMetadata(CaseInfo caseInfo) throws IOException, InterruptedException {
-        Path evidenceDir = caseInfo.casePath().resolve("evidence");
-        Path metadataDir = CaseServices.metadataDir(caseInfo);
-        Files.createDirectories(metadataDir);
 
-        String script = """
-import json
-from pathlib import Path
-from modules.fs_metadata import scan_directory
-from modules.file_metadata import extract_format_metadata
+    private final ForensicApiClient apiClient = new ForensicApiClient();
+    private String currentSessionId = null;
 
-path = r"%s"
-out = Path(r"%s")
-fs_result = scan_directory(path, recursive=True, max_files=100000)
-records = []
-for fs_entry in fs_result.get("files", []):
-    merged = dict(fs_entry)
-    try:
-        extra = extract_format_metadata(fs_entry["path"])
-        for k, v in extra.items():
-            if k not in merged:
-                merged[k] = v
-    except Exception as exc:
-        merged["extract_error"] = str(exc)
-    records.append(merged)
-out.mkdir(parents=True, exist_ok=True)
-for record in records:
-    safe_name = "".join(c if c.isalnum() or c in "._-" else "_" for c in record.get("name", "record"))
-    with open(out / f"{safe_name}.json", "w", encoding="utf-8") as f:
-        json.dump(record, f, indent=2, default=str)
-print(len(records))
-""".formatted(evidenceDir.toAbsolutePath(), metadataDir.toAbsolutePath());
 
-        String python = selectPythonExecutable();
+    // ── Health check ───────────────────────────────────────────────────
 
-        ProcessBuilder pb = new ProcessBuilder(List.of(
-                python,
-                "-c",
-                script
-        ));
-        pb.directory(Path.of("../extractor").toFile());
-        pb.redirectErrorStream(true);
-        Process p = pb.start();
-        String output = new String(p.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
-        int exit = p.waitFor();
-        if (exit != 0) {
-            throw new IOException("Metadata extraction failed: " + output);
-        }
+    public boolean isServiceRunning() {
+        return apiClient.isServiceRunning();
     }
 
-    private String selectPythonExecutable() {
-        Path venvPython = Paths.get("../extractor/.venv/bin/python");
-        if (Files.exists(venvPython)) {
-            return venvPython.toAbsolutePath().toString();
-        }
 
-        Path venvPython3 = Paths.get("../extractor/.venv/bin/python3");
-        if (Files.exists(venvPython3)) {
-            return venvPython3.toAbsolutePath().toString();
-        }
+    // ── Scan ───────────────────────────────────────────────────────────
 
-        return "python3";
+    public JSONObject extractMetadata(CaseInfo caseInfo, int maxFiles)
+            throws IOException, InterruptedException {
+
+        Path evidenceDir = caseInfo.casePath().resolve("evidence");
+        Path metadataDir = CaseServices.metadataDir(caseInfo);
+
+        JSONObject result = apiClient.scan(
+                evidenceDir.toAbsolutePath().toString(),
+                maxFiles,
+                true,
+                metadataDir.toAbsolutePath().toString()
+        );
+
+        currentSessionId = result.getString("session_id");
+        return result;
+    }
+
+
+    // ── Browser artifacts ──────────────────────────────────────────────
+
+    public JSONObject extractBrowserArtifacts(String networkFolderPath)
+            throws IOException, InterruptedException {
+
+        ensureSessionExists("extractBrowserArtifacts");
+        return apiClient.browser(currentSessionId, networkFolderPath);
+    }
+
+
+    // ── Report ─────────────────────────────────────────────────────────
+
+    public JSONObject generateReport(String investigator, int topN)
+            throws IOException, InterruptedException {
+
+        ensureSessionExists("generateReport");
+        return apiClient.report(currentSessionId, investigator, topN, null);
+    }
+
+
+    // ── Clear ──────────────────────────────────────────────────────────
+
+    public void clearSession() throws IOException, InterruptedException {
+        if (currentSessionId == null) return;
+        apiClient.clear(currentSessionId);
+        currentSessionId = null;
+    }
+
+
+    // ── Getters ────────────────────────────────────────────────────────
+
+    public String getCurrentSessionId() {
+        return currentSessionId;
+    }
+
+
+    // ── Helpers ────────────────────────────────────────────────────────
+
+    private void ensureSessionExists(String callerMethod) throws IOException {
+        if (currentSessionId == null) {
+            throw new IOException(
+                callerMethod + "() called before extractMetadata() — no active session"
+            );
+        }
     }
 }
