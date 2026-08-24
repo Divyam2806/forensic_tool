@@ -1,10 +1,38 @@
 # Forensic Evidence Preservation & Cyber Forensics Toolkit
 
+A GUI-driven, case-managed digital forensics toolkit that takes an investigation from evidence acquisition to a searchable, reportable case file — with role-based access control, chain-of-custody logging, and local AI-assisted analysis built in.
+
+---
+
+## Table of Contents
+
+- [Overview](#overview)
+- [Key Features](#key-features)
+- [System Architecture](#system-architecture)
+- [Project Layout](#project-layout)
+- [Requirements](#requirements)
+- [Setup](#setup)
+- [Running the Toolkit](#running-the-toolkit)
+- [Authentication & Roles](#authentication--roles)
+- [Typical Workflow](#typical-workflow)
+- [Case Folder Structure](#case-folder-structure)
+- [Core Actions](#core-actions)
+- [Search Query Examples](#search-query-examples)
+- [Cross-Platform Notes](#cross-platform-notes)
+- [Files That Stay Local](#files-that-stay-local)
+- [Launch Checklist](#launch-checklist)
+- [Roadmap](#roadmap)
+
+---
+
+## Overview
+
 This project is a GUI-based forensic toolkit built around:
 
 - a Python extractor for metadata and PDF/text content
 - a Java Swing dashboard for case management and workflow control
 - Apache Lucene for keyword and metadata search
+- a locally hosted LLM (Qwen2.5-3B), served via a Python FastAPI service, for AI-assisted case analysis
 
 The current UI supports:
 
@@ -20,7 +48,7 @@ The current UI supports:
 - Audit Logs
 - AI Analysis
 
-## What this project does
+## Key Features
 
 The toolkit helps you:
 
@@ -29,56 +57,23 @@ The toolkit helps you:
 - search file content and metadata with Lucene
 - generate PDF forensic reports
 - log chain-of-custody activity
+- run AI-assisted analysis over case data using a locally hosted LLM
 
-## How to Run the Java App
+## System Architecture
 
-### Prerequisites
+The toolkit is split into three cooperating layers:
 
-1. **Java 17+** — confirm with `java -version`
-2. **Maven** — confirm with `mvn -version`
-3. **Python 3.13** with virtualenv set up inside `extractor/`
-4. **Python dependencies** installed — from `extractor/`:
-   ```bash
-   python -m pip install -r requirements.txt
-   ```
-5. **MediaInfo** installed — download from [mediaarea.net/en/MediaInfo](https://mediaarea.net/en/MediaInfo)
-6. **Qwen LLM model** — download `Qwen2.5-3B-Instruct.Q4_K_M.gguf` from [https://huggingface.co/divyam2806/qwen2.5-3b-forensic-finetuned] and place at `model/Qwen2.5-3B-Instruct.Q4_K_M.gguf`
-7. **ONNX model path** — open `lucene-forensic-search/src/main/resources/config.properties` and update the ONNX model path present in root to match your local setup
+- **Presentation & Control (Java Swing):** handles login, role-based access control, case creation, and drives every workflow action (acquisition, imaging, extraction, indexing, search, reporting, AI analysis) against the active case.
+- **Extraction & AI Service (Python):** the Python extractor pulls metadata and text content from evidence files, and a FastAPI service (`extractor/api.py`, run via `uvicorn`) serves the locally hosted Qwen2.5-3B model for AI Analysis.
+- **Search (Apache Lucene):** the Java layer compiles extracted metadata into a Lucene index for fast keyword and fielded search.
 
----
+> **Important:** the Java app depends on the Python FastAPI service at runtime — it will show an error dialog and refuse to proceed if that service is not running. Always start the FastAPI service first (see [Running the Toolkit](#running-the-toolkit)).
 
-### Steps to Run
+Every action taken through the GUI is scoped to a single active case and written into that case's own folder tree, keeping evidence, derived metadata, search indices, reports, and logs isolated per investigation.
 
-**Step 1 — Start the Python FastAPI service**
+## Project Layout
 
-From the `extractor/` directory with your virtualenv active:
-```bash
-uvicorn api:app --host 127.0.0.1 --port 8000
-```
-Keep this terminal open — the Java app communicates with this service throughout its lifecycle. The app will show an error dialog and refuse to proceed if this service is not running.
-
-**Step 2 — Build and run the Java app**
-
-Open a new terminal, navigate to `lucene-forensic-search/` and run:
-```bash
-mvn compile exec:java -Dexec.mainClass=com.forensics.ForensicApp
-```
-
-
-**Step 3 — Login**
-
-A login dialog will appear on launch. Use your registered credentials to proceed to the dashboard.
-Admin account:
-user: admin
-pass: admin123
-
----
-
-### Notes
-
-- Cases are stored under `lucene-forensic-search/cases/` by default
-- Metadata JSON exports if ran from CLI or Python GUI go to `forensic_tool/metadata-json/` for Lucene indexing
-## Project layout (not upto date)
+> **Note (from the project maintainers):** this tree is **not up to date**. It does not yet reflect `extractor/api.py` (the FastAPI service), the `model/` directory holding the local LLM weights, or the AI Analysis configuration in `config.properties`.
 
 ```text
 forensic_tool/
@@ -99,23 +94,37 @@ forensic_tool/
 └── README.md
 ```
 
+| Path | Purpose |
+|---|---|
+| `extractor/main.py` | Entry point for the Python metadata/content extractor |
+| `extractor/api.py` | FastAPI service (started via `uvicorn api:app`) that the Java app calls for AI Analysis |
+| `extractor/modules/` | Individual extraction modules invoked by `main.py` |
+| `extractor/requirements.txt` | Python dependencies for the extractor and API service |
+| `model/Qwen2.5-3B-Instruct.Q4_K_M.gguf` | Local LLM weights used for AI Analysis |
+| `lucene-forensic-search/` | Java Swing GUI, case management, and Lucene search engine |
+| `lucene-forensic-search/src/main/resources/users.json` | Sample login accounts and roles |
+| `lucene-forensic-search/src/main/resources/config.properties` | ONNX model path and other local configuration |
+| `lucene-forensic-search/cases/` | Root directory holding every case created through the GUI |
+| `evidence/`, `metadata-json/`, `index/` | Top-level working directories referenced by the extractor and indexer |
+
 ## Requirements
 
-You need:
+- **Java 17+** — confirm with `java -version`
+- **Maven 3.8+** — confirm with `mvn -version`
+- **Python 3.13** with a virtualenv set up inside `extractor/`
+- **Python dependencies** — from `extractor/`:
+  ```bash
+  python -m pip install -r requirements.txt
+  ```
+- **MediaInfo** — download from [mediaarea.net/en/MediaInfo](https://mediaarea.net/en/MediaInfo)
+- **Qwen LLM model** — download [`Qwen2.5-3B-Instruct.Q4_K_M.gguf`](https://huggingface.co/divyam2806/qwen2.5-3b-forensic-finetuned) and place it at `model/Qwen2.5-3B-Instruct.Q4_K_M.gguf`
+- **ONNX model path** — open `lucene-forensic-search/src/main/resources/config.properties` and update the ONNX model path present in root to match your local setup
 
-- Java 17+
-- Maven 3.8+
-- Python 3.10+
+## Setup
 
-The extractor also expects these Python packages, which are listed in:
+### Python Environment
 
-```text
-extractor/requirements.txt
-```
-
-## Recommended setup
-
-If you use the Python extractor directly, create and use a virtual environment:
+Create and use a virtual environment for the extractor and API service:
 
 ```bash
 cd forensic_tool/extractor
@@ -124,16 +133,44 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-## Running the GUI
+### Additional Prerequisites
 
-The GUI lives in the Lucene project.
+With the environment active, work through the [Requirements](#requirements) list above — install MediaInfo, download the Qwen model file to `model/Qwen2.5-3B-Instruct.Q4_K_M.gguf`, and update the ONNX model path in `config.properties`.
+
+## Running the Toolkit
+
+**Step 1 — Start the Python FastAPI service**
+
+From the `extractor/` directory with your virtualenv active:
 
 ```bash
-cd forensic_tool/lucene-forensic-search
-mvn exec:java -Dexec.mainClass="com.forensics.ForensicApp"
+uvicorn api:app --host 127.0.0.1 --port 8000
 ```
 
-## Default login users
+Keep this terminal open — the Java app communicates with this service throughout its lifecycle. The app will show an error dialog and refuse to proceed if this service is not running.
+
+**Step 2 — Build and run the Java app**
+
+Open a new terminal, navigate to `lucene-forensic-search/` and run:
+
+```bash
+mvn compile exec:java -Dexec.mainClass=com.forensics.ForensicApp
+```
+
+**Step 3 — Login**
+
+A login dialog will appear on launch. Use your registered credentials to proceed to the dashboard.
+
+Admin account:
+
+```text
+user: admin
+pass: admin123
+```
+
+## Authentication & Roles
+
+### Default Login Users
 
 These are the sample accounts in `src/main/resources/users.json`:
 
@@ -142,46 +179,28 @@ These are the sample accounts in `src/main/resources/users.json`:
 - `analyst / analyst123`
 - `auditor / audit123`
 
-## Roles
+### Role Permissions
 
-### Admin
+| Role | Permissions |
+|---|---|
+| **Admin** | Full access |
+| **Investigator** | Create/open case, acquire evidence, create disk image, extract metadata, index files, search evidence, generate reports |
+| **Analyst** | Open existing case, extract metadata, search evidence, generate reports |
+| **Auditor** | View audit logs, search evidence |
 
-- full access
+## Typical Workflow
 
-### Investigator
+1. Start the Python FastAPI service (`uvicorn api:app ...`).
+2. Launch the GUI.
+3. Log in with a role.
+4. Create or open a case.
+5. Acquire evidence into the case.
+6. Extract metadata.
+7. Index the case metadata.
+8. Search evidence.
+9. Generate a report.
 
-- create/open case
-- acquire evidence
-- create disk image
-- extract metadata
-- index files
-- search evidence
-- generate reports
-
-### Analyst
-
-- open existing case
-- extract metadata
-- search evidence
-- generate reports
-
-### Auditor
-
-- view audit logs
-- search evidence
-
-## Typical workflow
-
-1. Launch the GUI.
-2. Log in with a role.
-3. Create or open a case.
-4. Acquire evidence into the case.
-5. Extract metadata.
-6. Index the case metadata.
-7. Search evidence.
-8. Generate a report.
-
-## Case folder structure
+## Case Folder Structure
 
 Each case is created under:
 
@@ -200,23 +219,13 @@ logs/
 images/
 ```
 
-## Generated reports
+**Note:** cases are stored under `lucene-forensic-search/cases/` by default. Metadata JSON exports generated by running the extractor from the CLI or the Python GUI (rather than through the Java case workflow) go to `forensic_tool/metadata-json/` for Lucene indexing instead.
 
-When you generate a report from the GUI, it is saved under:
+## Core Actions
 
-```text
-lucene-forensic-search/cases/<CASE_ID>/reports/
-```
+### Evidence Acquisition
 
-Example:
-
-```text
-lucene-forensic-search/cases/CASE001/reports/CASE001_report_20260708_035043.pdf
-```
-
-## Evidence acquisition
-
-The `Acquire Evidence` action copies a selected folder into the active case’s:
+The `Acquire Evidence` action copies a selected folder into the active case's:
 
 ```text
 cases/<CASE_ID>/evidence/
@@ -224,7 +233,7 @@ cases/<CASE_ID>/evidence/
 
 It also logs chain-of-custody activity.
 
-## Metadata extraction and search
+### Metadata Extraction & Indexing
 
 The `Extract Metadata` action runs the Python extractor against the active case evidence folder and writes JSON into:
 
@@ -238,18 +247,48 @@ The `Index Files` action then indexes that metadata into:
 cases/<CASE_ID>/index/
 ```
 
+### Search
+
 The `Search Evidence` action opens a search dialog against the active case index.
 
-## Report generation
+### AI Analysis
 
-The `Generate Report` action uses the existing Python report generator to create a PDF report from the active case and stores it in the case’s `reports/` folder.
+The `AI Analysis` action uses the locally hosted Qwen2.5-3B model (served by the FastAPI service and configured via `config.properties`) to provide AI-assisted analysis of case data.
 
-## Notes on cross-platform behavior
+### Report Generation
+
+The `Generate Report` action uses the existing Python report generator to create a PDF report from the active case and stores it in the case's `reports/` folder.
+
+When you generate a report from the GUI, it is saved under:
+
+```text
+lucene-forensic-search/cases/<CASE_ID>/reports/
+```
+
+Example:
+
+```text
+lucene-forensic-search/cases/CASE001/reports/CASE001_report_20260708_035043.pdf
+```
+
+## Search Query Examples
+
+From the GUI search box:
+
+| Query | What it matches |
+|---|---|
+| `ganesh` | Free-text keyword search across indexed content |
+| `extension:pdf` | Files with the `.pdf` extension |
+| `modified:2026-06-22` | Files last modified on the given date |
+| `author:ritik` | Documents whose author metadata is "ritik" |
+| `encrypted:false` | Files that are not encrypted |
+
+## Cross-Platform Notes
 
 - The GUI, case management, metadata extraction, indexing, search, and report generation are designed to work across OSes as long as the required Java/Python dependencies are installed.
 - Raw disk imaging currently uses `dd`, so that part is Unix-like system friendly and not fully Windows-native yet.
 
-## Files that stay local
+## Files That Stay Local
 
 This repo ignores runtime forensic artifacts such as:
 
@@ -261,38 +300,24 @@ This repo ignores runtime forensic artifacts such as:
 
 So you can run the toolkit locally without pushing evidence artifacts to GitHub.
 
-## Search examples
-
-From the GUI search box:
-
-```text
-ganesh
-```
-
-```text
-extension:pdf
-```
-
-```text
-modified:2026-06-22
-```
-
-```text
-author:ritik
-```
-
-```text
-encrypted:false
-```
-
-## Launch checklist
+## Launch Checklist
 
 If the GUI does not start, check:
 
+- the Python FastAPI service (`uvicorn api:app ...`) is running on port 8000 before you start the Java app
 - you ran Maven from `lucene-forensic-search/`
 - Java 17 is installed
 - the Python virtual environment exists in `extractor/.venv`
 - `pypdf`, `reportlab`, and the other extractor dependencies are installed
+- MediaInfo is installed
+- the Qwen model file exists at `model/Qwen2.5-3B-Instruct.Q4_K_M.gguf`
+- the ONNX model path in `config.properties` matches your local setup
 
+## Roadmap
 
+Planned future directions (not yet implemented):
 
+- OCR support so text embedded in scanned/carved images can also be indexed and searched
+- Low-level deleted-file recovery and signature-based file carving
+- A distributed, multi-investigator web front end built on the existing case-and-auth service
+- Cross-case correlation and comparison reporting
